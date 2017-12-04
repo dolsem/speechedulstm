@@ -35,7 +35,7 @@ def metaParse(i):
 #this parses the audio .wav files with the "wave" library and the "struct" library to unpack the byte stream
 #pulls all samples from in the selection size, storing it as a list of tuples from the channels
 def audioParseSelection(i, start, end):
-    w = wave.open(root_path+"wave/SBC%03d.wav" % (i), 'r')
+    w = wave.open(root_path+"wav/SBC%03d.wav" % (i), 'r')
     w.setpos(int(start * w.getframerate()))
     try:
         raw = [struct.unpack("%dh" % (w.getnchannels()), w.readframes(1)) for _ in range(int(w.getframerate() * (end - start)))]
@@ -49,7 +49,7 @@ def audioParseSelection(i, start, end):
 #based on the times slices, it then pulls in all available metadata (matching the names)
 #and audio values from the wave (using the start and end seconds)
 def combine (i, time, meta):
-    print "%d, %s: %f to %f" % (i, time.get("name"), time.get("start"), time.get("end"))
+    #print "%d, %s: %f to %f" % (i, time.get("name"), time.get("start"), time.get("end"))
     audio, freq = audioParseSelection(i, time.get("start"), time.get("end"))
     if time.get("name") in meta.keys() and len(audio) > 0:
         time.update(meta.get(time.get("name")))
@@ -69,8 +69,7 @@ def pickleData(meta, r):
 
 ranges = [range(1,15), range(15,31), range(31, 47), range(47, 61)]
 
-#x = 1 # 1-4 available
-
-print "start"
-pickleData(metaParse(x), ranges[x-1])
-print "all done"
+for x in [1, 2, 3, 4]:
+    print("Processing metadata #{}, conversations {}...".format(x, ranges[x-1]))
+    pickleData(metaParse(x), ranges[x-1])
+    print "Done.\n"
