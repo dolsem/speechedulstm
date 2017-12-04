@@ -1,6 +1,6 @@
 import keras
 from keras.models import Model
-from keras.layers import Input, LSTM, Bidirectional
+from keras.layers import Input, LSTM, Bidirectional, Dense
 import keras.backend as K
 
 
@@ -81,18 +81,31 @@ class EduLSTM:
 def build_edulstm(batch_size=1,
                   seqlen=None,   # Allows for arbitrary sequence length
                   input_dim=1,
+                  output_dim=5,
                   frame_sizes=(10, 10)):
-
-    lstm1_input = Input((batch_size, seqlen, input_dim))
+    """
+    lstm1_input = Input((seqlen, input_dim))
     lstm1_out = Bidirectional(LSTM(1,
                                    return_sequences=True))(lstm1_input)
     lstm2_input = K.reshape(lstm1_out, [frame_sizes[0], -1])
     lstm2_out = Bidirectional(LSTM(1, return_sequences=True))(lstm2_input)
     lstm3_input = K.reshape(lstm2_out, [frame_sizes[1], -1])
 
-    lstm3_out = LSTM(input_dim)(lstm3_input)
+    lstm3_out = LSTM(256, input_dim)(lstm3_input)
+    out = Dense(output_dim, activation='softmax')(lstm3_out)
 
-    return Model(inputs=lstm1_input, outputs=lstm3_out)
+    return Model(inputs=lstm1_input, outputs=out)
+    """
+    model = keras.models.Sequential()
+    model.add(Bidirectional(LSTM(1, return_sequences=True),
+                            input_shape=(seqlen, input_dim)))
+    model.add(keras.layers.Reshape((frame_sizes[0], -1)))
+    model.add(Bidirectional(LSTM(1, return_sequences=True)))
+    model.add(keras.layers.Reshape((frame_sizes[1], -1)))
+    model.add(LSTM(frame_sizes[1], return_sequences=False))
+    model.add(keras.layers.Reshape((frame_sizes[1],)))
+    model.add(Dense(output_dim, activation='softmax'))
+    return model
 
 
 def train_edulstm(network,
