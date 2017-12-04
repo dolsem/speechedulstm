@@ -1,3 +1,4 @@
+import warnings
 import numpy
 import audioop
 import pickle
@@ -36,7 +37,12 @@ class SantaBarbaraDataset(Dataset):
         count = 1
         for path_to_file in filenames:
             with open(path_to_file, 'rb') as _file:
-                db += pickle.load(_file)
+                try:
+                    db += pickle.load(_file)
+                except EOFError:
+                    warnings.warn("{} is corrupt, skipping.".format(
+                        os.path.basename(filenames[count-1])), ResourceWarning)
+                    continue
             if verbose is True:
                 print("Loaded {}".format(os.path.basename(filenames[count-1])))
             count += 1
