@@ -1,4 +1,5 @@
 import numpy
+import audioop
 import pickle
 import os
 import glob
@@ -50,21 +51,21 @@ class SantaBarbaraDataset(Dataset):
                     raw_data,
                     test_ratio: "Ratio of test set size to dataset size" = 0.3,
                     separate_speakers: "If set to True, training set and test\
-                    set will not share examples with the same speaker, which\
-                    will make it impossible for the network to 'cheat' by\
-                    associating education level with speaker id." = True,
+set will not share examples with the same speaker, which will make it\
+impossible for the network to 'cheat' by associating education level with\
+speaker id." = True,
                     depth: "Audio depth in bits" = 8,
+                    target_freq: "If not None, audio will be converted to this\
+frequency" = None,
                     one_hot: "Whether to use one-hot encodings for\
-                    labels" = True,
+labels" = True,
                     seqlen: "Number of frames per example. Shorter examples\
-                    will be zero-padded, longer examples will be cropped.\
-                    If set to zero, original number of frames will be\
-                    preserved (and example length will possibly vary.)" = 0,
+will be zero-padded, longer examples will be cropped. If None, original number\
+of frames will be preserved (and example length will possibly vary.)" = None,
                     noise_ratio: 'Ratio of examples with random noise to\
-                    generate for training. Can be used to train the\
-                    network to distinguish between human speech and other\
-                    audio input. Will create additional label class with value\
-                    -1.' = .0,
+generate for training. Can be used to train the network to distinguish between\
+human speech and other audio input. Will create additional label class with\
+value -1.' = .0,
                     verbose: "Prints log to stdout" = False):
         freq = raw_data[0]['freq']
         data = []
@@ -82,10 +83,15 @@ class SantaBarbaraDataset(Dataset):
                     if edu_level not in edu_level_types:
                         edu_level_types.append(edu_level)
                     # Bring examples to the same length (if seqlen is
-                    # non-zero), convert stereo to mono and normalize.
-                    wav = (wave2numpy(raw_data[ix]['wav']['left'], seqlen) +
-                           wave2numpy(raw_data[ix]['wav']['right'], seqlen) /
-                           (2**depth))
+                    # defined) and convert stereo to mono.
+                    wav = (wave2np(raw_data[ix]['wav']['left'], seqlen) +
+                           wave2np(raw_data[ix]['wav']['right'], seqlen) / 2)
+                    # Convert to target_freq if not None.
+                    if target_freq is not None:
+                        wav = freq_convert(wav, freq, target_freq)
+                    # Normalize.
+                    wav = wav / 2**(depth-1)
+
                     data.append({'x': wav,
                                  'y': edu_level,
                                  'scene_id': example['conv_id']})  # Change back to scene_id
@@ -97,6 +103,8 @@ class SantaBarbaraDataset(Dataset):
         self._datalen = len(data)
         num_noise = int(noise_ratio * self._datalen)
         if num_noise > 0:
+            if target_freq is not None:
+                freq = target_freq
             if verbose is True:
                 print("\nGenerating {} noise sequences...".format(num_noise))
             self.categories.append(-1)
@@ -158,8 +166,8 @@ class SantaBarbaraDataset(Dataset):
         return self.categories[numpy.argmax(label_vector)]
 
 
-def wave2numpy(wave, seqlen):
-    if seqlen == 0:
+def wave2np(wave, seqlen):
+    if seqlen is None:
         return numpy.array(wave)
     else:
         length = len(wave)
@@ -169,3 +177,9 @@ def wave2numpy(wave, seqlen):
         else:
             return numpy.array(wave[:seqlen])
 
+
+def freq_convert(wave, freq, target_freq):
+    wav_packed = wave.astype('h').tostring()
+    converted_packed = audioop.ratecv(wav_packed, 2, 1, freq, target_freq,
+                                      None)
+    return numpy.fromstring(converted_packed, dtype='h')
