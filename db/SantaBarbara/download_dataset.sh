@@ -15,7 +15,7 @@ cd ..
 # Audio
 mkdir -p wav
 for (( i=1; i<=60; i++)); do
-  if [ $i -le 10 ]; then
+  if [ $i -le 9 ]; then
     wget "http://www.linguistics.ucsb.edu/corpusmedia/SBC00${i}.wav" wav/
   else
     wget "http://www.linguistics.ucsb.edu/corpusmedia/SBC0${i}.wav" wav/
