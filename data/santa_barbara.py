@@ -41,6 +41,7 @@ class SantaBarbaraDataset(Dataset):
             count += 1
             if scenes_num > 0 and count > scenes_num:
                 break
+        self.scenes_num = count - 1
         if verbose is True:
             print("\n")
         return db
@@ -112,10 +113,10 @@ class SantaBarbaraDataset(Dataset):
         # Convert labels to one hot representation.
         if one_hot is True:
             if verbose is True:
-                print("\nConverting labals to one hot representations...")
+                print("\nConverting labels to one-hot representations...")
             edu_levels = numpy.zeros((self._datalen, len(self.categories)))
             edu_levels[numpy.arange(self._datalen),
-                       [item['y'] for item in data]] = 1
+                       [self.categories.index(item['y']) for item in data]] = 1
             for ix in range(self._datalen):
                 data[ix]['y'] = edu_levels[ix]
             if verbose is True:
