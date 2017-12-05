@@ -106,13 +106,14 @@ value -1.' = .0,
                         if length > seqlen:
                             cutoff = length - (length % seqlen)
                             wavs = numpy.array(wav[:cutoff]).reshape(
-                                (-1, seqlen))
+                                (-1, seqlen, 1))
                         else:
                             wavs = numpy.pad(wav, (0, seqlen-length),
                                              'constant',
-                                             constant_values=0).reshape(1, -1)
+                                             constant_values=0)
+                            wavs = wavs.reshape((1, -1, 1))
                     else:
-                        wavs = [wav]
+                        wavs = numpy.array(wav).reshape(1, -1, 1)
 
                     num_fragments = len(wavs) if use_all_fragments else 1
                     for i in range(num_fragments):
