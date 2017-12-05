@@ -142,5 +142,7 @@ def train_edulstm(network,
                                                        mode='auto'))
 
     network.fit_generator(generator=dataset.generator['train'],
+                          steps_per_epoch=dataset.training_size,
                           validation_data=dataset.generator['test'],
+                          validation_steps=dataset.test_size,
                           callbacks=callbacks)
