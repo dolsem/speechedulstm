@@ -1,17 +1,25 @@
 import keras
 from keras.models import Model
-from keras.layers import Input, LSTM, Bidirectional, Dense
-import keras.backend as K
+from keras.layers import Input, Reshape, Dropout
+from keras.layers import LSTM, Bidirectional, Dense
 
 
 class EduLSTM:
 
     def __init__(self,
                  batch_size=1,
-                 seqlen=None,
-                 input_dim=1,
-                 frame_sizes=(10, 10),
-                 saves_dir=None,
+                 seqlen: "Number of frames, set to None for variable frames\
+number." = None,
+                 input_dim: "Frame vector size, 1 for single number" = 1,
+                 output_dim: "Output vector size, should be equal to number of\
+categories" = 5,
+                 frame_sizes: "Number of layer outputs combined together as an\
+input to the next layer at a single time step" = (25, 20),
+                 hyper_sizes: "Sizes of LSTM cell outputs at each layer" =
+                 (16, 16, 256),
+                 dropout_ratio=0.2,
+                 saves_dir: "Set to None to disable saving weights during\
+training" = None,
                  saves_format="weights.{epoch:02d}-{val_loss:.2f}.hdf5"):
 
         self.saves_dir = saves_dir
@@ -19,7 +27,10 @@ class EduLSTM:
         self.network = build_edulstm(batch_size,
                                      seqlen,
                                      input_dim,
-                                     frame_sizes)
+                                     output_dim,
+                                     frame_sizes,
+                                     hyper_sizes,
+                                     dropout_ratio)
 
     def __call__(self, audio_sample):
         return self.network.predict(audio_sample)
@@ -82,30 +93,27 @@ def build_edulstm(batch_size=1,
                   seqlen=None,   # Allows for arbitrary sequence length
                   input_dim=1,
                   output_dim=5,
-                  frame_sizes=(10, 10)):
-    """
-    lstm1_input = Input((seqlen, input_dim))
-    lstm1_out = Bidirectional(LSTM(1,
-                                   return_sequences=True))(lstm1_input)
-    lstm2_input = K.reshape(lstm1_out, [frame_sizes[0], -1])
-    lstm2_out = Bidirectional(LSTM(1, return_sequences=True))(lstm2_input)
-    lstm3_input = K.reshape(lstm2_out, [frame_sizes[1], -1])
+                  frame_sizes=(25, 20),
+                  hyper_sizes=(16, 16, 256),
+                  dropout_ratio=0.2):
 
-    lstm3_out = LSTM(256, input_dim)(lstm3_input)
+    lstm1_input = Input(batch_shape=(1, seqlen, input_dim))
+    lstm1_out = Bidirectional(LSTM(hyper_sizes[0],
+                                   return_sequences=True))(lstm1_input)
+    if dropout_ratio > 0:
+            lstm1_out = Dropout(dropout_ratio)(lstm1_out)
+
+    lstm2_input = Reshape((-1, frame_sizes[0]*2*hyper_sizes[0]))(lstm1_out)
+    lstm2_out = Bidirectional(LSTM(hyper_sizes[1],
+                                   return_sequences=True))(lstm2_input)
+    if dropout_ratio > 0:
+            lstm2_out = Dropout(dropout_ratio)(lstm2_out)
+
+    lstm3_input = Reshape((-1, frame_sizes[1]*2*hyper_sizes[1]))(lstm2_out)
+    lstm3_out = LSTM(hyper_sizes[2])(lstm3_input)
     out = Dense(output_dim, activation='softmax')(lstm3_out)
 
     return Model(inputs=lstm1_input, outputs=out)
-    """
-    model = keras.models.Sequential()
-    model.add(Bidirectional(LSTM(1, return_sequences=True),
-                            input_shape=(seqlen, input_dim)))
-    model.add(keras.layers.Reshape((frame_sizes[0], -1)))
-    model.add(Bidirectional(LSTM(1, return_sequences=True)))
-    model.add(keras.layers.Reshape((frame_sizes[1], -1)))
-    model.add(LSTM(frame_sizes[1], return_sequences=False))
-    model.add(keras.layers.Reshape((frame_sizes[1],)))
-    model.add(Dense(output_dim, activation='softmax'))
-    return model
 
 
 def train_edulstm(network,
