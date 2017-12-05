@@ -49,12 +49,12 @@ class SantaBarbaraDataset(Dataset):
             if scenes_num > 0 and count > scenes_num:
                 break
         self.scenes_num = count - 1
-        if verbose is True:
-            print("\n")
         return db
 
     def _preprocess(self,
                     raw_data,
+                    use_years: "If set to True, will use years of education\
+instead of highest degree name." = True,
                     test_ratio: "Ratio of test set size to dataset size" = 0.3,
                     separate_speakers: "If set to True, training set and test\
 set will not share examples with the same speaker, which will make it\
@@ -68,6 +68,10 @@ labels" = True,
                     seqlen: "Number of frames per example. Shorter examples\
 will be zero-padded, longer examples will be cropped. If None, original number\
 of frames will be preserved (and example length will possibly vary.)" = None,
+                    use_all_fragments: "If set to True and seqlen is not None,\
+each example will be split into fragments of seqlen and each fragment will be\
+added as an individual datapoint. Otherwise only the first fragment will be\
+                    preserved." = True,
                     noise_ratio: 'Ratio of examples with random noise to\
 generate for training. Can be used to train the network to distinguish between\
 human speech and other audio input. Will create additional label class with\
@@ -80,27 +84,45 @@ value -1.' = .0,
             print("Procesing audio. {} sequences to process...".format(
                 len(raw_data)))
 
+        education_field = 'education_years' if use_years else 'education'
         edu_level_types = []
         for ix in range(len(raw_data)):
             example = raw_data[ix]
             if example is not None:
-                edu_level = example['education_years']
-                if edu_level is not None:
+                edu_level = example[education_field]
+                if edu_level is not None and edu_level not in ['', '?']:
                     if edu_level not in edu_level_types:
                         edu_level_types.append(edu_level)
-                    # Bring examples to the same length (if seqlen is
-                    # defined) and convert stereo to mono.
-                    wav = (wave2np(raw_data[ix]['wav']['left'], seqlen) +
-                           wave2np(raw_data[ix]['wav']['right'], seqlen) / 2)
+                    # Convert stereo to mono.
+                    wav = (numpy.array(raw_data[ix]['wav']['left']) +
+                           numpy.array(raw_data[ix]['wav']['right']) / 2)
                     # Convert to target_freq if not None.
                     if target_freq is not None:
                         wav = freq_convert(wav, freq, target_freq)
-                    # Normalize.
-                    wav = wav / 2**(depth-1)
 
-                    data.append({'x': wav,
-                                 'y': edu_level,
-                                 'scene_id': example['conv_id']})  # Change back to scene_id
+                    if seqlen is not None:
+                        # Bring examples to the same length
+                        length = len(wav)
+                        if length > seqlen:
+                            cutoff = length - (length % seqlen)
+                            wavs = numpy.array(wav[:cutoff]).reshape(
+                                (-1, seqlen))
+                        else:
+                            wavs = numpy.pad(wav, (0, seqlen-length),
+                                             'constant',
+                                             constant_values=0).reshape(1, -1)
+                    else:
+                        wavs = [wav]
+
+                    num_fragments = len(wavs) if use_all_fragments else 1
+                    for i in range(num_fragments):
+                        wav = wavs[i]
+                        # Normalize.
+                        wav = wav / 2**(depth-1)
+
+                        data.append({'x': wav,
+                                     'y': edu_level,
+                                     'scene_id': example['conv_id']})  # Change back to scene_id
 
         if verbose is True:
             print("Done.")
@@ -116,8 +138,11 @@ value -1.' = .0,
             self.categories.append(-1)
             self._datalen += num_noise
             for i in range(num_noise):
-                # Choose sequence length between 1 and 3 seconds.
-                length = numpy.random.randint(freq, 3*freq)
+                if seqlen is None:
+                    # Choose sequence length between 1 and 3 seconds.
+                    length = numpy.random.randint(freq, 3*freq)
+                else:
+                    length = seqlen
                 example = (numpy.random.choice([1, -1], length) *
                            numpy.random.rand(length))
                 data.append({'x': example, 'y': -1, 'scene_id': -1})
@@ -172,20 +197,8 @@ value -1.' = .0,
         return self.categories[numpy.argmax(label_vector)]
 
 
-def wave2np(wave, seqlen):
-    if seqlen is None:
-        return numpy.array(wave)
-    else:
-        length = len(wave)
-        if length < seqlen:
-            return numpy.pad(wave, (0, seqlen-length), 'constant',
-                             constant_values=0)
-        else:
-            return numpy.array(wave[:seqlen])
-
-
 def freq_convert(wave, freq, target_freq):
     wav_packed = wave.astype('h').tostring()
-    converted_packed = audioop.ratecv(wav_packed, 2, 1, freq, target_freq,
-                                      None)
+    converted_packed, _ = audioop.ratecv(wav_packed, 2, 1, freq, target_freq,
+                                         None)
     return numpy.fromstring(converted_packed, dtype='h')

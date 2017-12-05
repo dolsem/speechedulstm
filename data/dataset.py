@@ -45,6 +45,9 @@ class Dataset(metaclass=ABCMeta):
     def __len__(self):
         return self._datalen
 
+    def __getitem__(self, key):
+        return self._data[key]
+
     def _load(self, path):
         return pickle.load(path)
 
@@ -71,7 +74,7 @@ class Dataset(metaclass=ABCMeta):
                     X.append(example['x'])
                     Y.append(example['y'])
                     if len(X) >= self.batch_size:
-                        yield X, Y
+                        yield numpy.array(X), numpy.array(Y)
                         self._on_batch_complete((X, Y))
                         X = []
                         Y = []
@@ -82,7 +85,7 @@ class Dataset(metaclass=ABCMeta):
                     X.append(self._data[ix]['x'])
                     Y.append(self._data[ix]['y'])
                     if len(X) >= self.batch_size:
-                        yield X, Y
+                        yield numpy.array(X), numpy.array(Y)
                         self._on_batch_complete((X, Y))
                         X = []
                         Y = []
@@ -93,7 +96,7 @@ class Dataset(metaclass=ABCMeta):
                     X.append(self._data[ix]['x'])
                     Y.append(self._data[ix]['y'])
                     if len(X) >= self.batch_size:
-                        yield X, Y
+                        yield numpy.array(X), numpy.array(Y)
                         self._on_batch_complete((X, Y))
                         X = []
                         Y = []
