@@ -72,6 +72,8 @@ of frames will be preserved (and example length will possibly vary.)" = None,
 each example will be split into fragments of seqlen and each fragment will be\
 added as an individual datapoint. Otherwise only the first fragment will be\
                     preserved." = True,
+                    multiple_of: "If defined and seqlen is None, pad every\
+sequence to make it a multiple of some number." = None,
                     noise_ratio: 'Ratio of examples with random noise to\
 generate for training. Can be used to train the network to distinguish between\
 human speech and other audio input. Will create additional label class with\
@@ -113,7 +115,11 @@ value -1.' = .0,
                                              constant_values=0)
                             wavs = wavs.reshape((1, -1, 1))
                     else:
-                        wavs = numpy.array(wav).reshape(1, -1, 1)
+                        if multiple_of is not None:
+                            wav = numpy.pad(wav, (0, (multiple_of - len(wav) %
+                                                      multiple_of)),
+                                            'constant', constant_values=0)
+                        wavs = wav.reshape(1, -1, 1)
 
                     num_fragments = len(wavs) if use_all_fragments else 1
                     for i in range(num_fragments):
@@ -142,6 +148,8 @@ value -1.' = .0,
                 if seqlen is None:
                     # Choose sequence length between 1 and 3 seconds.
                     length = numpy.random.randint(freq, 3*freq)
+                    if multiple_of is not None:
+                        length += multiple_of - (length % multiple_of)
                 else:
                     length = seqlen
                 example = (numpy.random.choice([1, -1], length) *
