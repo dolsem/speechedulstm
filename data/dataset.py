@@ -9,18 +9,25 @@ class DataGenerator:
     Wrapper class used to construct generators with set length
     and specified parameters.
     """
-    def __init__(self, generator_func, length, generator_params=[]):
-        self.generator = generator_func(*generator_params)
-        self.length = length
+    def __init__(self, generator_func, length, generator_params=[], flags={}):
+        self._generator = generator_func(*generator_params)
+        self._length = length
+        self._flags = flags
 
     def __call__(self):
         return self.__next__()
 
     def __next__(self):
-        return next(self.generator)
+        return next(self._generator)
 
     def __len__(self):
-        return self.length
+        return self._length
+
+    def set(self, flag, value):
+        self._flags[flag] = value
+
+    def get(self, flag):
+        return self._flags[flag]
 
 
 class Dataset(metaclass=ABCMeta):
@@ -66,45 +73,88 @@ class Dataset(metaclass=ABCMeta):
             self._generate_data, self._testlen, ['test'])}
 
     def _generate_data(self, partition=None):
+        data_ixs = (range(len(self._data)) if partition is None else
+                    self._training_set if partition is 'train' else
+                    self._test_set if partition is 'test' else None)
+        X = []
+        Y = []
+
+        while True:
+            for ix in data_ixs:
+                item, flags = self._get_item(ix)
+                for k in flags.keys():
+                    self._generator[partition].set(k, flags[k])
+                X.append(item[0])
+                Y.append(item[1])
+                if len(X) >= self._batch_size:
+                    yield numpy.array(X), numpy.array(Y)
+                    X = []
+                    Y = []
+            self._on_dataset_complete()
+
+    """def _generate_data(self, partition=None):
         X = []
         Y = []
         if partition is None:
             while True:
                 for example in self._data:
-                    X.append(example['x'])
-                    Y.append(example['y'])
-                    if len(X) >= self.batch_size:
-                        yield numpy.array(X), numpy.array(Y)
-                        self._on_batch_complete((X, Y))
-                        X = []
-                        Y = []
+                    if self.batch_size is not None:
+                        X.append(example['x'])
+                        Y.append(example['y'])
+                        if len(X) >= self.batch_size:
+                            yield numpy.array(X), numpy.array(Y)
+                            self._on_batch_complete((X, Y))
+                            X = []
+                            Y = []
+                    else:
+                        self._on_batch_begin()
+                        for subseq in range(example['x'].shape[0]):
+                            yield example['x'][subseq], example['y'][subseq]
+                        self._on_batch_complete((example['x'], example['y']))
                 self._on_dataset_complete()
         elif partition == 'train':
             while True:
                 for ix in self._training_set:
-                    X.append(self._data[ix]['x'])
-                    Y.append(self._data[ix]['y'])
-                    if len(X) >= self.batch_size:
-                        yield numpy.array(X), numpy.array(Y)
-                        self._on_batch_complete((X, Y))
-                        X = []
-                        Y = []
+                    if self.batch_size is not None:
+                        X.append(self._data[ix]['x'])
+                        Y.append(self._data[ix]['y'])
+                        if len(X) >= self.batch_size:
+                            yield numpy.array(X), numpy.array(Y)
+                            self._on_batch_complete((X, Y))
+                            X = []
+                            Y = []
+                    else:
+                        print("ix {}".format(ix))
+                        self._on_batch_begin()
+                        for subseq in range(self._data[ix]['x'].shape[0]):
+                            yield self._data[ix]['x'][subseq], self._data[ix]['y'][subseq]
+                        self._on_batch_complete((self._data[ix]['x'],
+                                                 self._data[ix]['y']))
                 self._on_dataset_complete()
         elif partition == 'test':
             while True:
                 for ix in self._test_set:
-                    X.append(self._data[ix]['x'])
-                    Y.append(self._data[ix]['y'])
-                    if len(X) >= self.batch_size:
-                        yield numpy.array(X), numpy.array(Y)
-                        self._on_batch_complete((X, Y))
-                        X = []
-                        Y = []
-                self._on_dataset_complete()
+                    if self.batch_size is not None:
+                        X.append(self._data[ix]['x'])
+                        Y.append(self._data[ix]['y'])
+                        if len(X) >= self.batch_size:
+                            yield numpy.array(X), numpy.array(Y)
+                            self._on_batch_complete((X, Y))
+                            X = []
+                            Y = []
+                    else:
+                        self._on_batch_begin()
+                        for subseq in range(self._data[ix]['x'].shape[0]):
+                            yield self._data[ix]['x'][subseq], self._data[ix]['y'][subseq]
+                        self._on_batch_complete((self._data[ix]['x'],
+                                                self._data[ix]['y']))
+                self._on_dataset_complete()"""
 
-    def _on_batch_complete(self, batch): pass
+    def _get_item(self, index):
+        return (self._data[index]['x'], self._data[index]['y']), {}
 
-    def _on_dataset_complete(self): pass
+    def _on_dataset_complete(self):
+        pass
 
     _getters = {'X_train': lambda self: self._training_set['X'],
                 'Y_train': lambda self: self._training_set['Y'],

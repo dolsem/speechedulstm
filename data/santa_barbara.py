@@ -72,6 +72,7 @@ of frames will be preserved (and example length will possibly vary.)" = None,
 each example will be split into fragments of seqlen and each fragment will be\
 added as an individual datapoint. Otherwise only the first fragment will be\
                     preserved." = True,
+                    truncate=True,
                     multiple_of: "If defined and seqlen is None, pad every\
 sequence to make it a multiple of some number." = None,
                     noise_ratio: 'Ratio of examples with random noise to\
@@ -106,9 +107,15 @@ value -1.' = .0,
                         # Bring examples to the same length
                         length = len(wav)
                         if length > seqlen:
-                            cutoff = length - (length % seqlen)
-                            wavs = numpy.array(wav[:cutoff]).reshape(
-                                (-1, seqlen, 1))
+                            if not truncate:
+                                cutoff = length - (length % seqlen)
+                                wavs = numpy.array(wav[:cutoff]).reshape(
+                                    (-1, seqlen, 1))
+                            else:
+                                wavs = numpy.pad(wav, (0, seqlen - length %
+                                                       seqlen), 'constant',
+                                                 constant_values=0)
+                                wavs = wavs.reshape((-1, seqlen, 1))
                         else:
                             wavs = numpy.pad(wav, (0, seqlen-length),
                                              'constant',
@@ -121,42 +128,58 @@ value -1.' = .0,
                                             'constant', constant_values=0)
                         wavs = wav.reshape(1, -1, 1)
 
+                    # Normalize.
+                    wavs = wavs / 2**(depth-1)
+
                     num_fragments = len(wavs) if use_all_fragments else 1
                     for i in range(num_fragments):
                         wav = wavs[i]
-                        # Normalize.
-                        wav = wav / 2**(depth-1)
-
                         data.append({'x': wav,
                                      'y': edu_level,
                                      'scene_id': example['conv_id']})  # Change back to scene_id
+                        if truncate is True:
+                            data[-1]['sequence_end'] = False
+                    if truncate is True:
+                        data[-1]['sequence_end'] = True
 
         if verbose is True:
             print("Done.")
 
         self.categories = edu_level_types
-        self._datalen = len(data)
-        num_noise = int(noise_ratio * self._datalen)
-        if num_noise > 0:
+        num_noise_target = int(noise_ratio * len(data))
+        if num_noise_target > 0:
+            num_noise = 0
             if target_freq is not None:
                 freq = target_freq
             if verbose is True:
                 print("\nGenerating {} noise sequences...".format(num_noise))
             self.categories.append(-1)
-            self._datalen += num_noise
-            for i in range(num_noise):
+            while num_noise < num_noise_target:
                 if seqlen is None:
                     # Choose sequence length between 1 and 3 seconds.
                     length = numpy.random.randint(freq, 3*freq)
                     if multiple_of is not None:
                         length += multiple_of - (length % multiple_of)
                 else:
-                    length = seqlen
+                    length = (seqlen if not truncate else
+                              seqlen * numpy.random.randint(5, 50))
                 example = (numpy.random.choice([1, -1], length) *
                            numpy.random.rand(length))
-                data.append({'x': example, 'y': -1, 'scene_id': -1})
+                if truncate:
+                    example = example.reshape((-1, seqlen, 1))
+                    for ix in range(example.shape[0]-1):
+                        data.append({'x': example[ix], 'y': -1, 'scene_id': -1,
+                                     'sequence_end': False})
+                    data.append({'x': example[-1], 'y': -1, 'scene_id': -1,
+                                 'sequence_end': True})
+                    num_noise += example.shape[0]
+                else:
+                    data.append({'x': example, 'y': -1, 'scene_id': -1})
+                    num_noise += 1
             if verbose is True:
                 print("Done.")
+
+        self._datalen = len(data)
 
         # Convert labels to one hot representation.
         if one_hot is True:
@@ -173,6 +196,8 @@ value -1.' = .0,
         # Partition the dataset
         self._training_set = []
         self._test_set = []
+        self._trainlen_truncated = 0
+        self._testlen_truncated = 0
         if verbose is True:
             print("\nPartitioning the dataset...")
         if separate_speakers is True:
@@ -183,23 +208,32 @@ value -1.' = .0,
                 scene_id = data[ix]['scene_id']
                 if scene_id in train_scenes:
                     self._training_set.append(ix)
+                    self._trainlen_truncated += data[ix]['x'].shape[0]
                 elif scene_id in test_scenes:
                     self._test_set.append(ix)
+                    self._testlen_truncated += data[ix]['x'].shape[0]
                 else:  # One of the generated noise samples.
                     if numpy.random.rand() > test_ratio:
                         self._training_set.append(ix)
+                        self._trainlen_truncated += data[ix]['x'].shape[0]
                     else:
                         self._test_set.append(ix)
+                        self._testlen_truncated += data[ix]['x'].shape[0]
         else:
             raise NotImplementedError()
 
         self._trainlen = len(self._training_set)
         self._testlen = len(self._test_set)
         self._data = data
+        self._truncate = truncate
         if verbose is True:
             print("Done.\n")
             print("Loaded {} train and {} test examples.".format(
                 self._trainlen, self._testlen))
+
+    def _get_item(self, index):
+        return ((self._data[index]['x'], self._data[index]['y']),
+                {'sequence_end': self._data[index]['sequence_end']})
 
     def decode(self, label_vector):
         """ Maps max value of vector to corresponding category."""
